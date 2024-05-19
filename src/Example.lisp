@@ -26,7 +26,7 @@
 	(:- (has ?agent ?info ?someformat) (has ?agent ?info ?someLocation ?someformat))
    
 	; Information is readable in all cases it is in plaintext 
-	; except when it is in a USB or otther such medium.
+	; except when it is in a USB or other such medium.
 	; In that case it has to be transfered to a device.
 	(:- (can-read ?agent ?info) 
 		(and 
@@ -1312,9 +1312,6 @@
 	   )
     )
 	
-	;++++++++++++++ 
-	;+ ** MAIN ** +
-	;++++++++++++++ 
 	(:method 
        (transmit-information ?sender ?recipient ?info) ;name
        ()
@@ -1326,6 +1323,21 @@
 		(transform ?receipient ?info) ;if needed
 		)
     )
+	
+	
+	;++++++++++++++ 
+	;+ ** MAIN ** +
+	;++++++++++++++ 
+    (:method 
+		(transmit-document ?sender ?recipient ?info) ;name
+		() ; precondition
+			(:ordered
+				(manage-keys ?sender ?recipient)
+				(transmit-information ?sender ?recipient ?info)
+				(final)
+			)
+    )
+
 	
 	
 
@@ -1402,16 +1414,40 @@
 				 (has ?recipient (key ?anyone ?anyoneelse shared) ?location ?someformat))
 	)
 
-	; Negative Attack Axiom - Authentication is successful if:
-	(:- (AuthSuccessful ?sender ?recipient ?info)
-		(and	(authenticated ?recipient ?sender ?info)
-			(not (IntBreached ?sender ?recipient ?info))
-		)
+	; Security Axiom - Authentication is successful if:
+	(:- (AuthSucc ?sender ?recipient ?info)
+		(authenticated ?recipient ?sender ?info)
 	)
+
+
+	; Attack Axiom - Authentication will fail if the attacker manages to steal the signing keys of the sender.
+	; In such a case the attacker can portray as the genuine sender. Two possibilities are provided: the attacker gains access to the workspace environment of the victim, installing devices (keyloggers, spy cameras and mics) that can eavesdrop the key during its use. It is assumed that if the device in the area is used to handle the key, they key will become accessible to the attacker. In the second case the attacker manages to also affect the victim's computer. 
+	; Other possibilities include (but omitted): social engineering (assumes untrained user), remote attacks to terminal, brute force reverse engineering of key (assumes weak key).
+	(:- (AuthBreached ?sender ?recipient ?info)
+		(or 
+			(and 
+				(is-compromised ?sender ?desk) 
+				(or 
+					(has ?sender (key ?sender private) local-drive digital-file)
+					(has ?sender (key ?sender private) physical paper)
+					(shared-by-phone ?sender ?recipient (key ?sender private))
+				)
+			)
+			(and 
+				(is-compromised ?sender ?pcTerminal) 
+				(or 
+					(has ?sender (key ?sender private) local-drive digital-file)
+					(has ?sender (key ?sender private) mailbox digital-file)
+				)
+			)
+		);or
+	)
+
+
 	
-	;
-	(:- (Repudiate ?agent ?info)
-		(not (AuthSuccessful ?agent ?recipient ?info))
+	; Security Axiom - Non-repuditation succeeds if the pronouncer cannot claim they are not the generators of ?info. Note that if the signing key is stolen, this is an attack on the sender not the recipient, who can still claim non-repudiation.
+	(:- (NonRepSucc ?pronouncer ?info ?recipient)
+		(cannot-repudiate ?pronouncer ?info ?recipient)
 	)
 
 
@@ -1436,18 +1472,6 @@
 
 
     (:method 
-		(sendInvoice ?sender ?recipient) ;name
-		() ; precondition
-			(:ordered
-				(manage-keys ?sender ?recipient)
-				(transmit-information ?sender ?recipient invoice)
-				(final)
-			)
-    )
-
-
-
-    (:method 
     (final) ;name
 	(
 	   
@@ -1461,10 +1485,15 @@
 		; + S E C U R I T Y    R E Q U I R E M E N T S +
 		; ++++++++++++++++++++++++++++++++++++++++++++++
 		(not (ConBreached supplier contractor invoice))
-		(AuthSuccessful supplier contractor invoice)
-		;(not (Repudiate supplier invoice))
+		(and	(AuthSucc supplier contractor invoice)
+				(not (AuthBreached supplier contractor invoice))
+		)
 		
-		(not 	(has supplier (key supplier contractor shared) local-drive digital-file))
+		(not (IntBreached supplier contractor invoce)
+		)
+		
+		;(NonRepSucc supplier invoice contractor)
+		(not (has supplier (key supplier contractor shared) local-drive digital-file))
 	)
 		(	(!done))
     )
@@ -1489,8 +1518,17 @@
 		; + D O M A I N    A S S U M P T I O N S  +
 		; +++++++++++++++++++++++++++++++++++++++++
 	   
-		(has contractor order local-drive digital-file)
+		;(has contractor order local-drive digital-file)
 		(has supplier invoice local-drive digital-file)
+		;(has supplier invoice physical printed)
+
+		;(has contractor (key supplier contractor shared) local-drive digital-file)
+		;(has supplier (key contractor supplier shared) local-drive digital-file)
+		;(has supplier (key supplier private) digital-file)
+		;(has contractor (key supplier public) digital-file)
+
+		(has supplier encryption-software)
+		(has contractor encryption-software)
 
 		(allow email)
 		;(allow sms)
@@ -1501,8 +1539,8 @@
 		(has supplier contractor email-address)
 		(has contractor supplier phone-number)
 		(has supplier contractor phone-number)
-		;(can-meet contractor supplier)
-		;(can-meet supplier contractor)
+		(can-meet contractor supplier)
+		(can-meet supplier contractor)
    
 		; +++++++++++++++++++++++++++++++++
 		; +   V U L N E R A B I L I T Y   +     
@@ -1510,13 +1548,22 @@
 		; +++++++++++++++++++++++++++++++++
 		(is-compromised network)
 		(is-compromised contractor mailbox)
-
+		;(is-compromised contractor phone)
+		;(is-compromised contractor shared-folder)
+		
+		;(is-compromised contractor physical)
+		
+		;(is-compromised supplier desk)
+		;(is-compromised supplier pcTerminal)
+		
+		;(is-bugged supplier)
+		;(is-bugged contractor)
 
 	) 
 
 	
 	(:ordered
-		(sendInvoice supplier contractor)
+		(transmit-document supplier contractor invoice)
 	)
 	
 	
@@ -1525,6 +1572,7 @@
 
 ; Find plans while optimizing for cost
 (find-plans 'problem1 :verbose :plans :optimize-cost t)
- 
 
-  
+
+
+ 
